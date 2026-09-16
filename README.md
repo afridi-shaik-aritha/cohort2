@@ -1,0 +1,194 @@
+# AI Fundamentals → AI Engineer — Assignment System
+
+One repo, one running system, six questions. Each question gets its own backend
+module and its own frontend page, reachable from a shared home screen. Progress is
+built and approved one question at a time — see `00-MASTER-PROMPT.md` for the process.
+
+## Status
+
+| # | Question                                   | Status      |
+|---|---------------------------------------------|-------------|
+| 1 | Streaming Chat UI                          | Ready to test |
+| 2 | Paper Inference Engine (+ Langfuse)        | Not built   |
+| 3 | RAG Extension — Q&A over the paper         | Not built   |
+| 4 | "Runaway Token Spend" writeup              | Not built   |
+| 5 | Langfuse Alert on Token/Cost                | Not built   |
+| 6 | Multi-paper RAG with access-scoped citations| Not built   |
+
+## Q1 — Streaming Chat UI (built, awaiting human sign-off)
+
+**What it is:** a chat page (`/q1`) streaming tokens over SSE as they're generated,
+with a visible indicator whenever a tool call creates a gap in the token stream,
+and edge cases handled (drop mid-stream, navigate away, tool failure, cancel).
+
+**SSE event protocol** (exact shapes in `docs/specs/q1-spec.md` §1):
+```json
+{"type": "run", "data": {"run_id": "r_…"}}                                   // first event, enables cancel
+{"type": "token", "data": {"text": "Hel"}}                                   // incremental text chunk
+{"type": "tool_call_start", "data": {"id": "call_…", "tool": "get_weather", "label": "Checking weather for Paris…", "args": {"city": "Paris"}}}
+{"type": "tool_call_end", "data": {"id": "call_…", "tool": "get_weather", "status": "ok|error", "summary": "Paris: 18°C, cloudy", "duration_ms": 412}}
+{"type": "error", "data": {"message": "…", "recoverable": true|false}}
+{"type": "done", "data": {"stop_reason": "completed|cancelled|error", "usage": null|{...}}}
+```
+Plus `: ping` SSE comments every 15s so proxies don't kill idle tool gaps.
+
+**What the UI shows during a tool call:** token rendering pauses; an inline
+bordered row appears inside the assistant bubble — spinner + "Checking weather
+for Paris…" — and flips to a check/alert icon + result summary when the tool
+finishes. Tokens resume below it. Never a frozen screen.
+
+**Edge cases:** navigate-away aborts the fetch and the backend polls
+`is_disconnected()` to tear down generation (no orphans); connection drop keeps
+partial text + a Retry button (manual retry only, no auto-loop); tool failure
+renders an error row and the stream completes instead of hanging; the circular
+**Stop** button cancels server-side (`DELETE /api/q1/runs/{run_id}/cancel` →
+`done{stop_reason:"cancelled"}`), not just the UI connection.
+
+**Tools (deterministic, no external APIs):** `get_weather(city)`,
+`calculator(expression)`, `get_current_time()`. In `lmstudio`/`mock` mode a
+server-side keyword router decides the first turn; real OpenAI/Anthropic
+providers use native function-calling.
+
+**Provider quirk documented** (`backend/app/shared/llm_client.py`): the local
+`liquid/lfm2.5-1.2b` refuses coding prompts and lazily skips tools whenever a
+`tools` array is attached — so the LM Studio path only sends tools on
+tool-result follow-up turns. Q2+ uses real providers; revisit then.
+
+**Verified (working system check):** tool question streams tokens + shows the
+gap indicator + completes; disconnect at 2s leaves no orphaned generation;
+cancel returns `{"ok":true}` and ends the run; 9/9 backend tests pass;
+`tsc` + `vite build` clean. UI is emoji-free, Claude-style (narrow column,
+plain assistant text, rounded composer, icon-only buttons).
+
+## Repository layout
+
+```
+/backend
+  /app
+    /q1_streaming            # SSE chat endpoint, event protocol, tool-call events  ← BUILT
+      router.py              # POST /api/q1/chat (SSE), DELETE cancel, GET health
+      tools.py               # 3 demo tools + keyword router + safe arithmetic
+    /q2_paper_inference       # PDF ingest, 4-section structured generation  (not built)
+    /q3_rag_qa                # single-paper RAG, section-aware chunking, citations  (not built)
+    /q6_multi_paper_rag        # multi-paper RAG, owner_id-scoped retrieval  (not built)
+    /shared
+      langfuse_client.py       # (Q2) one shared Langfuse wrapper
+      llm_client.py            # pluggable streaming provider: mock|openai|anthropic|lmstudio
+      protocol.py              # SSE event constructors (shapes above)
+      cancel_registry.py       # run_id → asyncio.Event, TTL 5 min
+    main.py                    # mounts routers + serves frontend/dist (single process)
+  /tests                       # pytest: protocol, tools, SSE stream (9 tests)
+  requirements.txt
+  .env / .env.example
+
+/frontend
+  /src
+    /pages
+      Home.tsx                 # question cards, status badges, routes to /q1../q6
+      Q1Streaming.tsx          # Claude-style chat: streaming, tool rows, stop/retry  ← BUILT
+      (Q2–Q6 pages: added when built)
+    /components
+      Icon.tsx                 # inline SVG icon set (no emojis, no icon library)
+    /styles
+      tokens.css               # from docs/design/design-tokens.md (locked)
+      app.css                  # Claude-style chat + card styles
+    App.tsx / main.tsx         # router shell; backend also serves built assets
+  /dist                        # production build (served by backend on :8000)
+  package.json / vite.config.ts
+
+/start.sh                       # ONE command: builds frontend if needed + runs everything
+
+/docs
+  /specs
+    q1-spec.md                 # APPROVED — event protocol, tool-gap UI, disconnect/cancel
+    q2-spec.md … q6-spec.md    # skeletons, filled per-question before building
+  /plans
+    q1-plan.md                 # Q1 implementation plan
+  /design
+    design-tokens.md             # locked visual system — read before any frontend work
+  q4-writeup-template.md
+  q5-alert-proof-template.md
+
+00-MASTER-PROMPT.md              # the process contract — read this first, always
+```
+
+## Running the system
+
+One command, one process — UI + API together on **http://localhost:8000**:
+
+```bash
+./start.sh
+```
+
+Then open http://localhost:8000 (Home at `/`, Q1 chat at `/q1`).
+
+- `start.sh` creates `backend/.env` from `.env.example` on first run, rebuilds
+  the frontend only when `frontend/src` changed, and serves everything via uvicorn.
+- If `backend/.env` says `LLM_PROVIDER=lmstudio`, keep LM Studio running on
+  `:1234` with model `liquid/lfm2.5-1.2b` loaded. The Q1 badge shows the active
+  provider; if LM Studio is down you get an `error` event, not a hang.
+
+Manual mode (two terminals — only needed for hot-reload frontend dev):
+
+```bash
+# terminal 1 — backend API only
+cd backend
+pip install -r requirements.txt
+cp .env.example .env   # edit as below
+uvicorn app.main:app --reload --port 8000
+
+# terminal 2 — Vite dev server with HMR (proxies /api → :8000)
+cd frontend
+npm install
+npm run dev   # http://localhost:5173
+```
+
+### Providers (`backend/.env`)
+
+| `LLM_PROVIDER` | Needs | Notes |
+|---|---|---|
+| `mock` (default) | nothing | canned streaming, keyword-routed tools; demo badge |
+| `lmstudio` | LM Studio on :1234 | `LMSTUDIO_MODEL=liquid/lfm2.5-1.2b`; no API key |
+| `openai` | `OPENAI_API_KEY` | `OPENAI_MODEL=gpt-4o-mini`, native function-calling |
+| `anthropic` | `ANTHROPIC_API_KEY` | `ANTHROPIC_MODEL=claude-3-5-haiku-latest`, native tool-use |
+| `openrouter` | `OPENROUTER_API_KEY` | 100+ models; `OPENROUTER_MODEL=meta-llama/llama-3.3-70b-instruct` |
+| `groq` | `GROQ_API_KEY` | fastest inference; `GROQ_MODEL=llama-3.3-70b-versatile` |
+| `deepinfra` | `DEEPINFRA_API_KEY` | `DEEPINFRA_MODEL=meta-llama/Llama-3.3-70B-Instruct` |
+| `nvidia` | `NVIDIA_API_KEY` | NVIDIA NIM; `NVIDIA_MODEL=meta/llama-3.3-70b-instruct` |
+
+All hosted providers speak the OpenAI wire format, so streaming + tool-calling
+work identically across them — see `backend/.env.example` for per-provider
+keys/models (model name formats differ per provider; examples included there).
+
+### Testing Q1
+
+- In the browser: ask "What's the weather in Paris?" → tokens stream, tool-gap
+  row appears, summary flips in, answer completes. Press **Stop** mid-stream →
+  "Cancelled." + server tears down the run.
+- Raw SSE: `curl -N -X POST localhost:8000/api/q1/chat -H 'Content-Type: application/json' -d '{"messages":[{"role":"user","content":"What is the weather in Paris?"}]}'`
+- Backend tests: `cd backend && python -m pytest tests/ -v` (provider-pinned to
+  mock, so your `.env` doesn't affect them)
+
+### API
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/q1/chat` | `{messages: [{role, content}]}` → SSE stream |
+| DELETE | `/api/q1/runs/{run_id}/cancel` | server-side cancel → `{"ok": bool}` |
+| GET | `/api/q1/health` | active provider + demo/live badge info |
+| GET | `/api/health` | `{"ok": true}` |
+
+### Git workflow
+
+Remote: `https://github.com/afridi-shaik-aritha/cohort2.git` — initialized, all
+work kept **unstaged** (zero commits so far). Commit/push happens per-question
+when explicitly requested.
+
+### Langfuse
+(Not yet. First needed in Q2; will confirm Cloud vs self-hosted then.)
+
+## Process
+
+See `00-MASTER-PROMPT.md`. Short version: one question at a time, spec → plan →
+build → self-verify against the PDF's "Working system check" → stop for human
+testing → only then move to the next question.

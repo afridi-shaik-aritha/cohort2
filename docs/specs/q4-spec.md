@@ -1,0 +1,51 @@
+# Q4 Spec — Explain "Runaway Token Spend" with a Cited Example
+
+Status: DRAFT
+
+Note: Q4 is a written deliverable, not a UI feature. The output is
+`/docs/q4-writeup-template.md` filled in, plus a small Home card ("Not built" →
+"Done") that links to that doc (or a simple rendered page for it — agent's choice,
+keep it minimal). This spec just tracks the research/reasoning steps; there's no
+separate frontend component to build here.
+
+## Original ask (from assignment PDF)
+What is the meaning of "runaway token spend"? Explain through an example and cite
+where you got the answer from.
+
+## Steps required by the PDF
+
+### 1. Find a real source
+Search for the term, read at least one credible source (vendor docs, an engineering
+blog post from a company running LLM systems in production, or a
+research/practitioner write-up). Cite properly: link, title, one-line note on what it
+says, in your own words — no pasted quotes.
+
+<!-- AGENT: record the source(s) found here before writing the final doc. -->
+
+### 2. Definition (in your own words)
+Runaway token spend: an LLM system's token consumption (and therefore cost) grows
+unexpectedly and uncontrollably — usually due to loops, retries, unbounded context
+growth, or a chain of tool calls that keeps expanding rather than terminating —
+rather than growing proportionally and predictably with usage.
+
+### 3. Example grounded in this actual system (Q2/Q3), not a hypothetical
+<!-- AGENT: pick a real candidate failure mode from what was actually built, e.g.:
+a RAG query stuck reformulating repeatedly, or a long paper re-summarized on every
+follow-up instead of reusing prior context. Walk through: what would trigger it in
+the built Q2/Q3 system, what it would look like in the Langfuse trace (many
+generations, escalating token counts, or a repeated identical generation), and the
+cost impact at a stated scale (e.g. "if this happened on 1% of 1,000 papers/day,
+that's an extra $X/day") — use real/estimated per-call costs from this system's
+actual Langfuse traces, not made-up numbers. -->
+
+### 4. Connect forward to Q5
+This definition is the reason a Langfuse alert (Q5) is being set up — state the link
+explicitly so Q5's threshold reasoning reads as a continuation, not a fresh start.
+
+## Working system check
+A clear, correctly-cited definition (link + source name) and an example specific to
+the system built this week, with rough real numbers — not a generic "imagine a
+chatbot" scenario.
+
+## Decisions log
+<!-- AGENT: record which source(s) were chosen and why. -->
