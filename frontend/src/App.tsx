@@ -4,18 +4,10 @@ import Home from "./pages/Home";
 import Q1Streaming from "./pages/Q1Streaming";
 
 export default function App() {
-  return (
-    <div className="shell">
-      <ShellInner />
-    </div>
-  );
-}
-
-function ShellInner() {
   const loc = useLocation();
   const isChat = loc.pathname === "/q1";
   return (
-    <div className={isChat ? "shell-chat-wrap" : undefined}>
+    <div className={isChat ? "shell shell-chat" : "shell"}>
       <div className="topbar">
         <Link className="brand" to="/"><SparkIcon size={18} /> AI Fundamentals → AI Engineer</Link>
         <nav>

@@ -66,6 +66,15 @@ export function RetryIcon({ size }: IconProps) {
   );
 }
 
+export function ArrowDownIcon({ size }: IconProps) {
+  return (
+    <Svg size={size}>
+      <path d="M12 5v14" />
+      <path d="m19 12-7 7-7-7" />
+    </Svg>
+  );
+}
+
 export function SparkIcon({ size }: IconProps) {
   return (
     <Svg size={size}>

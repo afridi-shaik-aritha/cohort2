@@ -35,14 +35,20 @@ Plus `: ping` SSE comments every 15s so proxies don't kill idle tool gaps.
 **What the UI shows during a tool call:** token rendering pauses; an inline
 bordered row appears inside the assistant bubble — spinner + "Checking weather
 for Paris…" — and flips to a check/alert icon + result summary when the tool
-finishes. Tokens resume below it. Never a frozen screen.
+finishes. Tokens resume below it. Never a frozen screen. While waiting for the
+first token, a pulsing "Thinking…/Pondering…/Reasoning through it…" status
+sits directly above the composer (sticky bottom, always next to the input),
+and disappears the instant tokens arrive.
 
 **Edge cases:** navigate-away aborts the fetch and the backend polls
 `is_disconnected()` to tear down generation (no orphans); connection drop keeps
 partial text + a Retry button (manual retry only, no auto-loop); tool failure
 renders an error row and the stream completes instead of hanging; the circular
 **Stop** button cancels server-side (`DELETE /api/q1/runs/{run_id}/cancel` →
-`done{stop_reason:"cancelled"}`), not just the UI connection.
+`done{stop_reason:"cancelled"}`), not just the UI connection. Auto-scroll
+follows the stream only while you're pinned near the bottom — scroll up
+mid-generation and it lets go, showing a "Jump to latest" pill above the
+composer until you return.
 
 **Tools (deterministic, no external APIs):** `get_weather(city)`,
 `calculator(expression)`, `get_current_time()`. In `lmstudio`/`mock` mode a
@@ -57,8 +63,10 @@ tool-result follow-up turns. Q2+ uses real providers; revisit then.
 **Verified (working system check):** tool question streams tokens + shows the
 gap indicator + completes; disconnect at 2s leaves no orphaned generation;
 cancel returns `{"ok":true}` and ends the run; 9/9 backend tests pass;
-`tsc` + `vite build` clean. UI is emoji-free, Claude-style (narrow column,
-plain assistant text, rounded composer, icon-only buttons).
+`tsc` + `vite build` clean. UI is emoji-free, Claude-style: 768px chat column,
+plain assistant text with markdown + KaTeX math rendering, rounded composer
+pinned just under the last message (sticky, 12px above the viewport bottom),
+icon-only buttons.
 
 ## Repository layout
 
