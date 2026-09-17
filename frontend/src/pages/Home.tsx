@@ -1,8 +1,8 @@
 import { Link } from "react-router-dom";
 
 const QUESTIONS = [
-  { n: 1, title: "Streaming Chat UI", desc: "SSE token streaming with tool-call gap indicators.", path: "/q1", status: "Ready to test", cls: "ready", enabled: true },
-  { n: 2, title: "Paper Inference Engine", desc: "Upload a paper, get 4 structured sections + Langfuse traces.", path: "", status: "Coming soon", cls: "", enabled: false },
+  { n: 1, title: "Streaming Chat UI", desc: "SSE token streaming with tool-call gap indicators.", path: "/q1", status: "Done", cls: "ready", enabled: true },
+  { n: 2, title: "Paper Inference Engine", desc: "Upload a paper, get 4 structured sections + Langfuse traces.", path: "/q2", status: "Ready to test", cls: "ready", enabled: true },
   { n: 3, title: "RAG Q&A over the paper", desc: "Ask questions about the paper with citations.", path: "", status: "Coming soon", cls: "", enabled: false },
   { n: 4, title: "Runaway Token Spend writeup", desc: "Definition, source, and a grounded cost example.", path: "", status: "Coming soon", cls: "", enabled: false },
   { n: 5, title: "Langfuse Alert on Token/Cost", desc: "Project-scoped alert + proof it fires.", path: "", status: "Coming soon", cls: "", enabled: false },

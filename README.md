@@ -8,8 +8,8 @@ built and approved one question at a time — see `00-MASTER-PROMPT.md` for the 
 
 | # | Question                                   | Status      |
 |---|---------------------------------------------|-------------|
-| 1 | Streaming Chat UI                          | Ready to test |
-| 2 | Paper Inference Engine (+ Langfuse)        | Not built   |
+| 1 | Streaming Chat UI                          | Done (approved) |
+| 2 | Paper Inference Engine (+ Langfuse)        | Ready to test |
 | 3 | RAG Extension — Q&A over the paper         | Not built   |
 | 4 | "Runaway Token Spend" writeup              | Not built   |
 | 5 | Langfuse Alert on Token/Cost                | Not built   |
@@ -68,6 +68,54 @@ plain assistant text with markdown + KaTeX math rendering, rounded composer
 pinned just under the last message (sticky, 12px above the viewport bottom),
 icon-only buttons.
 
+## Q2 — Paper Inference Engine (built)
+
+**What it is:** upload a paper PDF at `/q2` → the system extracts text + metadata,
+then drafts four sections in **four separate sequential LLM calls** (per-section
+streaming progress, per-section retry/eval, per-section token cost): Technical
+summary, Intuition, Prerequisite learning, Summary. Every call is traced to
+Langfuse Cloud.
+
+**Pipeline:** PyMuPDF extraction (de-hyphenation, running header/footer removal,
+table-fragment dropping, title/authors parsed from page-1 fonts — PDF metadata is
+empty on real papers) → quality gate (<2,000 chars → 422, >400,000 → 413) →
+`single_pass` (≤40k chars) or `chunk-and-map-reduce` (8k chunks, 1k overlap,
+`chunk_digest:<n>` generations) → four section generations streamed over SSE.
+
+**Adaptive input budget:** the 40k-char budget assumes a roomy context window.
+For LM Studio the backend probes the loaded model's real `context_length` via
+its REST API and shrinks the per-call budget accordingly (e.g. an 8192-token
+context → ~27k chars), switching to map-reduce instead of silently truncating.
+
+**SSE events** (Q1 vocabulary + Q2 additions):
+```json
+{"type": "section_start", "data": {"key": "technical", "label": "Technical summary", "index": 0, "total": 4}}
+{"type": "token", "data": {"section": "technical", "text": "…"}}
+{"type": "section_done", "data": {"key": "technical", "chars": 1834, "usage": {"input": 9947, "output": 512, "total": 10459}, "duration_ms": 41234}}
+```
+Sections persist as they finish, so a cancelled run keeps completed sections.
+
+**Langfuse trace structure** (one trace per analyze run, `q2.paper_analysis`):
+`extract_pdf` span → `chunk_digest:0..n` generations (map-reduce only) →
+`section:technical|intuition|prerequisites|summary` generations. Trace metadata
+carries `paper_id`, `title`, `owner_id`, `provider`, `model`, `strategy`; tags
+`["q2", "paper-analysis", provider]`; `session_id = paper_id`. Each generation
+records `usage_details` (input/output/total tokens) so cost shows per step.
+No keys → tracing no-ops and the UI shows "Observability: off".
+
+**Endpoints:** `POST /api/q2/papers` (upload), `POST /api/q2/papers/{id}/analyze`
+(SSE), `GET /api/q2/papers[?owner_id=]`, `GET /api/q2/papers/{id}`,
+`DELETE /api/q2/runs/{run_id}/cancel`, `GET /api/q2/health`.
+
+**Verified (working system check):** uploaded *Attention Is All You Need* (15
+pages, 39,379 chars) — title + all 8 authors parsed correctly; four sections
+stream in order on the local `lfm2.5-2.6b` model with real per-call token usage
+(LM Studio honors `stream_options.include_usage`); Langfuse Cloud (jp region)
+shows ONE trace per run — root `q2.paper_analysis` span → `extract_pdf` →
+`chunk_digest:0..5` → `section:*` — with model + usage on every generation
+(e.g. technical 2731 in / 1132 out, summary 2692 in / 659 out). 28 backend
+tests pass (9 Q1 + 19 Q2); `tsc` + `vite build` clean.
+
 ## Repository layout
 
 ```
@@ -76,16 +124,23 @@ icon-only buttons.
     /q1_streaming            # SSE chat endpoint, event protocol, tool-call events  ← BUILT
       router.py              # POST /api/q1/chat (SSE), DELETE cancel, GET health
       tools.py               # 3 demo tools + keyword router + safe arithmetic
-    /q2_paper_inference       # PDF ingest, 4-section structured generation  (not built)
+    /q2_paper_inference       # PDF ingest, 4-section structured generation  ← BUILT
+      extraction.py          # PyMuPDF + cleanup + title/author heuristics + gates
+      prompts.py             # four section instructions + chunking + digest prompt
+      analyzer.py            # 4 sequential generations, map-reduce, tracing
+      storage.py             # JSON records under data/papers/ (owner_id from day one)
+      router.py              # upload / analyze (SSE) / list / get / cancel / health
     /q3_rag_qa                # single-paper RAG, section-aware chunking, citations  (not built)
     /q6_multi_paper_rag        # multi-paper RAG, owner_id-scoped retrieval  (not built)
     /shared
-      langfuse_client.py       # (Q2) one shared Langfuse wrapper
+      langfuse_client.py       # no-op-safe Langfuse Cloud tracing (used by Q2)
+      llm_text.py              # plain-text streaming + usage capture + adaptive budget
       llm_client.py            # pluggable streaming provider: mock|openai|anthropic|lmstudio
       protocol.py              # SSE event constructors (shapes above)
       cancel_registry.py       # run_id → asyncio.Event, TTL 5 min
     main.py                    # mounts routers + serves frontend/dist (single process)
-  /tests                       # pytest: protocol, tools, SSE stream (9 tests)
+  /tests                       # pytest: protocol, tools, Q1 stream, Q2 unit+API (28 tests)
+  /data/papers/                # uploaded-paper JSON records (gitignored)
   requirements.txt
   .env / .env.example
 
@@ -94,7 +149,8 @@ icon-only buttons.
     /pages
       Home.tsx                 # question cards, status badges, routes to /q1../q6
       Q1Streaming.tsx          # Claude-style chat: streaming, tool rows, stop/retry  ← BUILT
-      (Q2–Q6 pages: added when built)
+      Q2PaperInference.tsx     # dropzone + 2×2 panel grid + per-section chips  ← BUILT
+      (Q3–Q6 pages: added when built)
     /components
       Icon.tsx                 # inline SVG icon set (no emojis, no icon library)
     /styles
@@ -128,7 +184,7 @@ One command, one process — UI + API together on **http://localhost:8000**:
 ./start.sh
 ```
 
-Then open http://localhost:8000 (Home at `/`, Q1 chat at `/q1`).
+Then open http://localhost:8000 (Home at `/`, Q1 chat at `/q1`, Q2 at `/q2`).
 
 - `start.sh` creates `backend/.env` from `.env.example` on first run, rebuilds
   the frontend only when `frontend/src` changed, and serves everything via uvicorn.
@@ -184,6 +240,12 @@ keys/models (model name formats differ per provider; examples included there).
 | POST | `/api/q1/chat` | `{messages: [{role, content}]}` → SSE stream |
 | DELETE | `/api/q1/runs/{run_id}/cancel` | server-side cancel → `{"ok": bool}` |
 | GET | `/api/q1/health` | active provider + demo/live badge info |
+| POST | `/api/q2/papers` | multipart PDF → `{paper_id, title, authors, pages, chars, strategy, warnings}` |
+| POST | `/api/q2/papers/{id}/analyze` | SSE: run → section_start/token/section_done ×4 → done |
+| GET | `/api/q2/papers` | stored papers (summary rows, optional `?owner_id=`) |
+| GET | `/api/q2/papers/{id}` | full record incl. generated sections |
+| DELETE | `/api/q2/runs/{run_id}/cancel` | server-side cancel → `{"ok": bool}` |
+| GET | `/api/q2/health` | `{provider, model, tracing, langfuse_host}` |
 | GET | `/api/health` | `{"ok": true}` |
 
 ### Git workflow
@@ -192,8 +254,21 @@ Remote: `https://github.com/afridi-shaik-aritha/cohort2.git` — initialized, al
 work kept **unstaged** (zero commits so far). Commit/push happens per-question
 when explicitly requested.
 
-### Langfuse
-(Not yet. First needed in Q2; will confirm Cloud vs self-hosted then.)
+### Langfuse (Q2+)
+
+Cloud, regional host supported. In `backend/.env`:
+
+```ini
+LANGFUSE_PUBLIC_KEY=pk-lf-…
+LANGFUSE_SECRET_KEY=sk-lf-…
+LANGFUSE_HOST=https://jp.cloud.langfuse.com   # or LANGFUSE_BASE_URL; default: cloud.langfuse.com
+```
+
+Leave the keys blank and everything still runs — tracing no-ops, `/api/q2/health`
+reports `"tracing": false`, and the Q2 page shows "Observability: off". Per-
+generation token usage appears in the Langfuse UI for every provider (LM Studio
+included — verified `stream_options.include_usage` works there). Cost computes
+automatically for models Langfuse has pricing for; local models report tokens only.
 
 ## Process
 

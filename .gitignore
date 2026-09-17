@@ -11,6 +11,9 @@ venv/
 .env
 !.env.example
 
+# Q2 paper artifacts (regenerated locally)
+backend/data/papers/*.json
+
 # Frontend
 node_modules/
 dist/

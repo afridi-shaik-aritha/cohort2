@@ -39,5 +39,26 @@ def done_event(stop_reason: str, usage: Optional[dict]) -> dict:
     return {"type": "done", "data": {"stop_reason": stop_reason, "usage": usage}}
 
 
+def section_start(key: str, label: str, index: int, total: int) -> dict:
+    """Q2: a per-section generation began."""
+    return {
+        "type": "section_start",
+        "data": {"key": key, "label": label, "index": index, "total": total},
+    }
+
+
+def section_token(key: str, text: str) -> dict:
+    """Q2: a token chunk tagged with the section it belongs to."""
+    return {"type": "token", "data": {"section": key, "text": text}}
+
+
+def section_done(key: str, chars: int, usage: Optional[dict], duration_ms: int) -> dict:
+    """Q2: a per-section generation finished."""
+    return {
+        "type": "section_done",
+        "data": {"key": key, "chars": chars, "usage": usage, "duration_ms": duration_ms},
+    }
+
+
 def format_sse(payload: dict) -> str:
     return "data: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
