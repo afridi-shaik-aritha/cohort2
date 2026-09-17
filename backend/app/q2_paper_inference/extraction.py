@@ -160,9 +160,22 @@ def _title_authors(doc) -> tuple[str, list[str], list[str]]:
         {size for _, size in lines if size > body_size + 0.4}, reverse=True
     )
     title = ""
+    title_last_idx: int | None = None
     if headline_sizes:
         biggest = headline_sizes[0]  # largest type on the page beats license blocks
-        title = max((t for t, s in lines if s == biggest), key=len)
+        # Multi-line titles wrap at the SAME size (e.g. BERT's two-line title):
+        # join consecutive biggest-size lines in reading order instead of taking
+        # the longest fragment — the leftover line otherwise leaked into the
+        # author bucket ("Language Understanding" parsed as an author).
+        first_idx = next((i for i, (t, s) in enumerate(lines) if s == biggest), None)
+        if first_idx is not None:
+            joined: list[str] = []
+            i = first_idx
+            while i < len(lines) and lines[i][1] == biggest:
+                joined.append(lines[i][0])
+                i += 1
+            title = " ".join(joined)
+            title_last_idx = i - 1
     if not meta_title and not title:
         warnings.append("title heuristics found no headline text; using first page-1 line")
         title = lines[0][0]
@@ -171,7 +184,9 @@ def _title_authors(doc) -> tuple[str, list[str], list[str]]:
 
     authors: list[str] = []
     if title:
-        idx = next((i for i, (t, _) in enumerate(lines) if t == title), None)
+        idx = title_last_idx
+        if idx is None:
+            idx = next((i for i, (t, _) in enumerate(lines) if t == title), None)
         if idx is not None:
             bucket: list[str] = []
             for text, size in lines[idx + 1:]:

@@ -3,6 +3,7 @@ import { SparkIcon } from "./components/Icon";
 import Home from "./pages/Home";
 import Q1Streaming from "./pages/Q1Streaming";
 import Q2PaperInference from "./pages/Q2PaperInference";
+import Q3RagQa from "./pages/Q3RagQa";
 
 export default function App() {
   const loc = useLocation();
@@ -15,12 +16,14 @@ export default function App() {
           <Link to="/">Home</Link>
           <Link to="/q1">Q1</Link>
           <Link to="/q2">Q2</Link>
+          <Link to="/q3">Q3</Link>
         </nav>
       </div>
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/q1" element={<Q1Streaming />} />
         <Route path="/q2" element={<Q2PaperInference />} />
+        <Route path="/q3" element={<Q3RagQa />} />
       </Routes>
     </div>
   );

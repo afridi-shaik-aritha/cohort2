@@ -35,8 +35,20 @@ def error_event(message: str, recoverable: bool) -> dict:
     return {"type": "error", "data": {"message": message, "recoverable": recoverable}}
 
 
-def done_event(stop_reason: str, usage: Optional[dict]) -> dict:
-    return {"type": "done", "data": {"stop_reason": stop_reason, "usage": usage}}
+def done_event(stop_reason: str, usage: Optional[dict], **extras) -> dict:
+    """Q1/Q2 shape preserved; Q3 adds refused/citations via **extras."""
+    data = {"stop_reason": stop_reason, "usage": usage}
+    data.update(extras)
+    return {"type": "done", "data": data}
+
+
+def citation_event(position: int, label: str, snippet: str) -> dict:
+    """Q3: a source the answer is grounded in, emitted before tokens so the UI
+    can render citation chips while the answer streams."""
+    return {
+        "type": "citation",
+        "data": {"position": position, "label": label, "snippet": snippet},
+    }
 
 
 def section_start(key: str, label: str, index: int, total: int) -> dict:

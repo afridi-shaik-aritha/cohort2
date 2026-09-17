@@ -116,6 +116,65 @@ shows ONE trace per run — root `q2.paper_analysis` span → `extract_pdf` →
 (e.g. technical 2731 in / 1132 out, summary 2692 in / 659 out). 28 backend
 tests pass (9 Q1 + 19 Q2); `tsc` + `vite build` clean.
 
+## Q3 — RAG Q&A over the paper (built)
+
+**What it is:** pick one of your uploaded papers at `/q3` and ask questions
+("how was this tested?", "what are the references?", "who are the authors?").
+Answers stream over SSE grounded in the paper, carry inline `[1]`-style
+numbered citations rendered as chips, and unanswerable questions are refused
+honestly instead of hallucinated.
+
+**Indexing:** the extracted paper text is **section-segmented** (numbered +
+word headings, split-number/title lines re-joined, table-cell noise rejected by
+monotonic-sequence checking) → **section-aware chunks** (1,600-char target,
+800-char overlap, heading-only stubs skipped — a bare "6\nResults" header
+matches "how was this tested?" lexically while carrying zero evidence) →
+embedded locally with **sentence-transformers all-MiniLM-L6-v2** (384-dim,
+no network, no key; no vector DB — vectors live in the paper record). The
+References section is captured verbatim as structured data, NOT chunked.
+
+**Three deliberate retrieval paths** (deterministic keyword router):
+- *metadata* ("who are the authors?") → answered from Q2's ingested title/
+  authors; no retrieval, no embeddings. Citation: `Page 1 (title block)`.
+- *references* ("what are the references?") → the verbatim References block.
+  Citation: `References (section)`.
+- *semantic* ("how was this tested?") → **hybrid retrieval**: dense cosine
+  fused with BM25-style keyword scoring via reciprocal rank fusion (dense-only
+  missed the evaluation section live — "tested" shares no wording with
+  "BLEU/newstest2014"), top-4 chunks. Citations: section labels.
+
+**Two-layer refusal:** cosine floor (0.10, recalibrated on live MiniLM scores —
+MiniLM is symmetric so vague queries score low; the floor is only a degenerate-
+retrieval pre-filter) skips generation entirely; the answer prompt otherwise
+requires grounding in the provided blocks and orders the model to reply
+`NOT_IN_PAPER` otherwise — that marker is prefix-buffered so it never flickers
+into the chat, and `done.refused=true` + the friendly message replace it.
+Refusals are traced too (`refused=true`) so Q5's alerting sees them.
+
+**Langfuse:** one trace per Q&A turn, `q3.paper_qa` (session_id = paper_id):
+`retrieve` span (path, top score, block count) → `answer` GENERATION with the
+retrieved context as input and real per-call usage.
+
+**Endpoints:** `POST /api/q3/papers/{id}/index` (idempotent; also auto-run
+before the first question), `GET /api/q3/papers/{id}/index` (UI chip),
+`POST /api/q3/papers/{id}/ask` → SSE `run` → `citation*` → `token*` →
+`done{stop_reason, usage, refused, citations}`, `DELETE
+/api/q3/runs/{run_id}/cancel`, `GET /api/q3/health` (chat + embedding models).
+
+**Verified (working system check, live `nvidia` / `openai/gpt-oss-20b` + local
+MiniLM, on `p_9c3022cf` — 35 chunks, 23 sections, 9,283-char references block):**
+1. "How was this tested?" → grounded answer (WMT 2014, newstest-2014 test sets,
+   BLEU, 8×P100 GPU schedule) citing 5.4/5/5.2 — 994 in / 643 out tokens.
+2. "What are the references?" → all 40 entries listed, `References (section)` —
+   3,078 in / 2,360 out.
+3. "Who are the authors?" → all 8 authors from metadata, `Page 1 (title
+   block)`, no retrieval — 253 in / 81 out.
+4. "What did the authors have for breakfast?" → honest refusal, generation
+   gate (`NOT_IN_PAPER`), traced with `refused=true` — 1,207 in / 62 out.
+Langfuse Cloud (jp) shows one `q3.paper_qa` trace per turn: root span →
+nested `retrieve` span + `answer` GENERATION with model + usage. 68 backend
+tests pass (9 Q1 + 19 Q2 + 40 Q3); `tsc` + `vite build` clean.
+
 ## Repository layout
 
 ```
@@ -130,16 +189,22 @@ tests pass (9 Q1 + 19 Q2); `tsc` + `vite build` clean.
       analyzer.py            # 4 sequential generations, map-reduce, tracing
       storage.py             # JSON records under data/papers/ (owner_id from day one)
       router.py              # upload / analyze (SSE) / list / get / cancel / health
-    /q3_rag_qa                # single-paper RAG, section-aware chunking, citations  (not built)
+    /q3_rag_qa                # single-paper RAG, section-aware chunking, citations  ← BUILT
+      segmentation.py         # section segmenter + verbatim References capture
+      chunking.py             # section-aware chunks (1.6k target / 800 overlap)
+      indexer.py              # embed chunks (local MiniLM) → index in paper record
+      retrieval.py            # router: metadata | references | semantic (+hybrid RRF)
+      analyzer.py             # grounded answer streaming, NOT_IN_PAPER gate, tracing
+      router.py               # index / ask (SSE) / status / cancel / health
     /q6_multi_paper_rag        # multi-paper RAG, owner_id-scoped retrieval  (not built)
     /shared
       langfuse_client.py       # no-op-safe Langfuse Cloud tracing (used by Q2)
-      llm_text.py              # plain-text streaming + usage capture + adaptive budget
+      llm_text.py              # plain-text streaming + usage capture + adaptive budget + local embeddings
       llm_client.py            # pluggable streaming provider: mock|openai|anthropic|lmstudio
       protocol.py              # SSE event constructors (shapes above)
       cancel_registry.py       # run_id → asyncio.Event, TTL 5 min
     main.py                    # mounts routers + serves frontend/dist (single process)
-  /tests                       # pytest: protocol, tools, Q1 stream, Q2 unit+API (28 tests)
+  /tests                       # pytest: protocol, tools, Q1 stream, Q2 unit+API, Q3 unit+API (68 tests)
   /data/papers/                # uploaded-paper JSON records (gitignored)
   requirements.txt
   .env / .env.example
@@ -150,7 +215,8 @@ tests pass (9 Q1 + 19 Q2); `tsc` + `vite build` clean.
       Home.tsx                 # question cards, status badges, routes to /q1../q6
       Q1Streaming.tsx          # Claude-style chat: streaming, tool rows, stop/retry  ← BUILT
       Q2PaperInference.tsx     # dropzone + 2×2 panel grid + per-section chips  ← BUILT
-      (Q3–Q6 pages: added when built)
+      Q3RagQa.tsx              # paper picker + chat + citation chips + refusal state ← BUILT
+      (Q4–Q6 pages: added when built)
     /components
       Icon.tsx                 # inline SVG icon set (no emojis, no icon library)
     /styles

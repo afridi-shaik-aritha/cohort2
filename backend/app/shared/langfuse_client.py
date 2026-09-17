@@ -80,6 +80,81 @@ class _NoOp:
         return None
 
 
+def _exit_quietly(cm) -> None:
+    """Leave an already-entered observation context, containing close errors."""
+    if cm is None:
+        return
+    try:
+        cm.__exit__(None, None, None)
+    except Exception as e:
+        log.warning("Langfuse observation close failed: %s", e)
+
+
+@contextmanager
+def _root_trace(*, trace_name: str, tags: list, paper_id: str, title: str,
+                owner_id: str, provider: str, model: str,
+                metadata: Optional[dict] = None):
+    """Shared shape for analysis_trace / qa_trace.
+
+    Structure matters: SETUP failures are contained (yield None, untraced),
+    but exceptions raised by the CALLER's `with` body propagate untouched —
+    an earlier version wrapped the body in try/except here and masked a real
+    generation bug as a "Langfuse failure" log line. Teardown runs in finally
+    on every path.
+    """
+    client = _client()
+    if client is None:
+        yield None
+        return
+    meta = {
+        "paper_id": paper_id,
+        "title": title,
+        "owner_id": owner_id,
+        "provider": provider,
+        "model": model,
+        **(metadata or {}),
+    }
+    attr_cm = None
+    obs_cm = None
+    try:
+        from langfuse import propagate_attributes
+
+        # SDK contract: propagate_attributes must WRAP the creation of the root
+        # span (or sit immediately inside it). Without a root span there is no
+        # trace to attach to, and every observation silently becomes its own
+        # orphan trace — the failure mode the first live run exposed.
+        attr_cm = propagate_attributes(
+            trace_name=trace_name,
+            user_id=owner_id,
+            session_id=paper_id,
+            tags=tags,
+            metadata=meta,
+        )
+        attr_cm.__enter__()
+        obs_cm = client.start_as_current_observation(
+            name=trace_name, as_type="span", metadata=meta
+        )
+        obs_cm.__enter__()
+    except Exception as e:
+        log.warning("Langfuse trace setup failed (%s), continuing untraced: %s", trace_name, e)
+        _exit_quietly(obs_cm)
+        if attr_cm is not None:
+            try:
+                attr_cm.__exit__(None, None, None)
+            except Exception:
+                pass
+        yield None
+        return
+    try:
+        yield client
+    finally:
+        _exit_quietly(obs_cm)
+        try:
+            attr_cm.__exit__(None, None, None)
+        except Exception:
+            pass
+
+
 @contextmanager
 def analysis_trace(
     *,
@@ -90,40 +165,35 @@ def analysis_trace(
     model: str,
     metadata: Optional[dict] = None,
 ):
-    """One trace per analyze request. Yields the client, or None when disabled."""
-    client = _client()
-    if client is None:
-        yield None
-        return
-    try:
-        from langfuse import propagate_attributes
+    """One trace per Q2 analyze request. Yields the client, or None when disabled."""
+    with _root_trace(
+        trace_name="q2.paper_analysis",
+        tags=["q2", "paper-analysis", provider],
+        paper_id=paper_id, title=title, owner_id=owner_id,
+        provider=provider, model=model, metadata=metadata,
+    ) as client:
+        yield client
 
-        meta = {
-            "paper_id": paper_id,
-            "title": title,
-            "owner_id": owner_id,
-            "provider": provider,
-            "model": model,
-            **(metadata or {}),
-        }
-        # SDK contract: propagate_attributes must WRAP the creation of the root
-        # span (or sit immediately inside it). Without a root span there is no
-        # trace to attach to, and every observation silently becomes its own
-        # orphan trace — the failure mode the first live run exposed.
-        with propagate_attributes(
-            trace_name="q2.paper_analysis",
-            user_id=owner_id,
-            session_id=paper_id,
-            tags=["q2", "paper-analysis", provider],
-            metadata=meta,
-        ):
-            with client.start_as_current_observation(
-                name="q2.paper_analysis", as_type="span", metadata=meta
-            ):
-                yield client
-    except Exception as e:
-        log.warning("Langfuse trace setup failed, continuing untraced: %s", e)
-        yield None
+
+@contextmanager
+def qa_trace(
+    *,
+    paper_id: str,
+    title: str,
+    owner_id: str,
+    provider: str,
+    model: str,
+    metadata: Optional[dict] = None,
+):
+    """One trace per Q3 Q&A turn. session_id = paper_id so a paper's Q&A turns
+    group with its q2.paper_analysis traces in the Langfuse session view."""
+    with _root_trace(
+        trace_name="q3.paper_qa",
+        tags=["q3", "rag-qa", provider],
+        paper_id=paper_id, title=title, owner_id=owner_id,
+        provider=provider, model=model, metadata=metadata,
+    ) as client:
+        yield client
 
 
 @contextmanager
@@ -135,20 +205,29 @@ def observation(
     input: Optional[Any] = None,
     metadata: Optional[dict] = None,
 ):
-    """Span/generation wrapper. Disabled mode yields a no-op recorder."""
+    """Span/generation wrapper. Disabled mode yields a no-op recorder.
+
+    Setup failures are contained (no-op); body exceptions propagate — same
+    contract as _root_trace.
+    """
     client = _client()
     if client is None:
         yield _NoOp()
         return
+    kwargs: dict = {"name": name, "as_type": as_type, "input": input, "metadata": metadata}
+    if model:
+        kwargs["model"] = model
     try:
-        kwargs: dict = {"name": name, "as_type": as_type, "input": input, "metadata": metadata}
-        if model:
-            kwargs["model"] = model
-        with client.start_as_current_observation(**kwargs) as obs:
-            yield obs
-    except Exception as e:  # tracing must never break a generation
-        log.warning("Langfuse observation failed (%s): %s", name, e)
+        cm = client.start_as_current_observation(**kwargs)
+        obs = cm.__enter__()
+    except Exception as e:
+        log.warning("Langfuse observation setup failed (%s): %s", name, e)
         yield _NoOp()
+        return
+    try:
+        yield obs
+    finally:
+        _exit_quietly(cm)
 
 
 def flush() -> None:

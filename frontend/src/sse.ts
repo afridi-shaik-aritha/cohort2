@@ -152,3 +152,132 @@ export async function cancelRun(runId: string): Promise<void> {
     /* UI abort is enough */
   }
 }
+
+/** ── Q3 additions: RAG Q&A over a paper ─────────────────────────────────── */
+
+export interface Citation {
+  position: number;
+  label: string;
+  snippet: string;
+}
+
+export interface TurnUsage {
+  input: number;
+  output: number;
+  total: number;
+}
+
+export type Q3Event =
+  | { type: "run"; data: { run_id: string } }
+  | { type: "citation"; data: Citation }
+  | { type: "token"; data: { text: string } }
+  | { type: "error"; data: { message: string; recoverable: boolean } }
+  | {
+      type: "done";
+      data: {
+        stop_reason: string;
+        usage: TurnUsage | null;
+        refused?: boolean;
+        citations?: Citation[];
+      };
+    };
+
+export async function askQuestion(
+  paperId: string,
+  question: string,
+  onEvent: (e: Q3Event) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const res = await fetch(`/api/q3/papers/${paperId}/ask`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question }),
+    signal,
+  });
+  if (!res.ok || !res.body) throw await errorFromResponse(res);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let idx: number;
+    while ((idx = buf.indexOf("\n\n")) >= 0) {
+      const frame = buf.slice(0, idx);
+      buf = buf.slice(idx + 2);
+      for (const line of frame.split("\n")) {
+        const t = line.trim();
+        if (!t || t.startsWith(":")) continue;
+        if (t.startsWith("data:")) {
+          try {
+            onEvent(JSON.parse(t.slice(5).trim()) as Q3Event);
+          } catch {
+            /* ignore malformed frame */
+          }
+        }
+      }
+    }
+  }
+}
+
+export interface IndexStatus {
+  indexed: boolean;
+  chunks?: number;
+  has_references?: boolean;
+  references_chars?: number;
+  embedding_model?: string;
+  built_at?: string;
+  qa_turns?: number;
+}
+
+export async function fetchIndexStatus(paperId: string): Promise<IndexStatus> {
+  const res = await fetch(`/api/q3/papers/${paperId}/index`);
+  if (!res.ok) throw await errorFromResponse(res);
+  return (await res.json()) as IndexStatus;
+}
+
+export async function buildIndex(paperId: string): Promise<{ chunks: number; has_references: boolean }> {
+  const res = await fetch(`/api/q3/papers/${paperId}/index`, { method: "POST" });
+  if (!res.ok) throw await errorFromResponse(res);
+  return (await res.json()) as { chunks: number; has_references: boolean };
+}
+
+export interface Q3Health {
+  provider: string;
+  model: string;
+  embedding_provider: string;
+  embedding_model: string;
+  tracing: boolean;
+  langfuse_host: string;
+}
+
+export async function fetchQ3Health(): Promise<Q3Health> {
+  const res = await fetch("/api/q3/health");
+  if (!res.ok) throw await errorFromResponse(res);
+  return (await res.json()) as Q3Health;
+}
+
+export interface PaperSummary {
+  paper_id: string;
+  title: string;
+  authors: string[];
+  pages: number;
+  chars: number;
+  created_at: string;
+}
+
+export async function listPapers(): Promise<PaperSummary[]> {
+  const res = await fetch("/api/q2/papers");
+  if (!res.ok) throw await errorFromResponse(res);
+  const body = (await res.json()) as { papers: PaperSummary[] };
+  return body.papers ?? [];
+}
+
+export async function cancelQ3Run(runId: string): Promise<void> {
+  try {
+    await fetch(`/api/q3/runs/${runId}/cancel`, { method: "DELETE" });
+  } catch {
+    /* UI abort is enough */
+  }
+}

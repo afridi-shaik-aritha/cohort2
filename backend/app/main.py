@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 
 from app.q1_streaming.router import router as q1_router
 from app.q2_paper_inference.router import router as q2_router
+from app.q3_rag_qa.router import router as q3_router
 
 load_dotenv()
 
@@ -19,6 +20,7 @@ app.add_middleware(
 
 app.include_router(q1_router)
 app.include_router(q2_router)
+app.include_router(q3_router)
 
 
 @app.get("/api/health")

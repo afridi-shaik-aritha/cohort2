@@ -13,6 +13,7 @@ estimate.
 """
 import asyncio
 import os
+import re
 import time
 from typing import AsyncIterator, Optional
 
@@ -20,7 +21,10 @@ import httpx
 
 from app.shared.llm_client import OPENAI_COMPAT_HOSTED, Message, get_provider
 
-__all__ = ["Message", "stream_text", "provider_model", "estimate_tokens", "input_char_budget"]
+__all__ = [
+    "Message", "stream_text", "provider_model", "estimate_tokens", "input_char_budget",
+    "embed_model", "embed_texts", "MOCK_EMBED_DIM",
+]
 
 # Default per-call paper budget (chars). The spec's 40k assumes a comfortable
 # context; `input_char_budget()` may lower it to fit the loaded local model.
@@ -49,6 +53,93 @@ def provider_model() -> tuple[str, str]:
 def estimate_tokens(text: str) -> int:
     """Rough token estimate (~4 chars/token) — always labelled as an estimate."""
     return max(1, len(text) // 4)
+
+
+# --- Embeddings (Q3 RAG) — local sentence-transformers -----------------------
+
+# User decision (2026-09-17): embeddings run LOCALLY via sentence-transformers
+# (all-MiniLM-L6-v2, 384-dim) — no network, no per-call cost, works offline.
+# Only LLM *generation* goes through the .env provider (e.g. NVIDIA NIM).
+EMBED_MODEL_NAME = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+
+MOCK_EMBED_DIM = 256  # dim of the deterministic hash embedder used by tests
+
+_embedder: Optional[object] = None
+
+
+def _get_embedder():
+    """Lazy singleton — first call downloads/loads the model (~9s), then cached."""
+    global _embedder
+    if _embedder is None:
+        from sentence_transformers import SentenceTransformer
+
+        _embedder = SentenceTransformer(EMBED_MODEL_NAME)
+    return _embedder
+
+
+def embed_model() -> tuple[str, str]:
+    """("local", model-name) — embeddings are always local sentence-transformers.
+
+    Overridable via EMBEDDING_MODEL for swapping to another local model.
+    """
+    return "local", EMBED_MODEL_NAME
+
+
+async def embed_texts(
+    texts: list[str], *, input_type: str = "passage"
+) -> list[list[float]]:
+    """Embed texts with the local MiniLM model (normalized, so cosine = dot).
+
+    input_type is accepted for call-site compatibility with hosted retrieval
+    models (NVIDIA required query/passage); MiniLM is symmetric so it is
+    ignored. Model load and encode run in worker threads via asyncio.to_thread
+    so the event loop (and SSE streaming) stays responsive. Failures raise
+    RuntimeError so callers degrade loudly rather than indexing silently empty.
+    """
+    if not texts:
+        return []
+    try:
+        model = await asyncio.to_thread(_get_embedder)
+        vecs = await asyncio.to_thread(model.encode, texts, normalize_embeddings=True)
+        return [v.tolist() for v in vecs]
+    except Exception as e:
+        raise RuntimeError(f"embedding failed ({EMBED_MODEL_NAME}): {e}") from e
+
+
+def _hash_vector(text: str) -> list[float]:
+    """Deterministic bag-of-trigram vector — test double for embed_texts.
+
+    Identical text → identical vector; overlapping wording → overlapping support,
+    so retrieval tests can assert real cosine behaviour without model downloads.
+    """
+    import hashlib
+    import math
+
+    vec = [0.0] * MOCK_EMBED_DIM
+    norm = re.sub(r"\s+", " ", text.lower())
+    for i in range(max(0, len(norm) - 2)):
+        h = int.from_bytes(hashlib.md5(norm[i : i + 3]).digest()[:4], "big")
+        vec[h % MOCK_EMBED_DIM] += 1.0
+    n = math.sqrt(sum(v * v for v in vec)) or 1.0
+    return [v / n for v in vec]
+
+
+def _hash_vector(text: str) -> list[float]:
+    """Deterministic bag-of-trigram vector — mock stand-in for real embeddings.
+
+    Identical text → identical vector; overlapping wording → overlapping support,
+    so retrieval tests can assert real cosine behaviour without network.
+    """
+    import hashlib
+    import math
+
+    vec = [0.0] * MOCK_EMBED_DIM
+    norm = re.sub(r"\s+", " ", text.lower())
+    for i in range(max(0, len(norm) - 2)):
+        h = int.from_bytes(hashlib.md5(norm[i : i + 3]).digest()[:4], "big")
+        vec[h % MOCK_EMBED_DIM] += 1.0
+    n = math.sqrt(sum(v * v for v in vec)) or 1.0
+    return [v / n for v in vec]
 
 
 async def input_char_budget() -> int:
