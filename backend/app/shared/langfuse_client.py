@@ -197,6 +197,27 @@ def qa_trace(
 
 
 @contextmanager
+def multi_qa_trace(
+    *,
+    owner_id: str,
+    provider: str,
+    model: str,
+    paper_ids: list,
+    metadata: Optional[dict] = None,
+):
+    """One trace per Q6 multi-paper Q&A turn, scoped to the requesting owner."""
+    with _root_trace(
+        trace_name="q6.multi_paper_qa",
+        tags=["q6", "multi-paper-qa", owner_id, provider],
+        paper_id=",".join(paper_ids) if paper_ids else "all",
+        title="multi-paper",
+        owner_id=owner_id,
+        provider=provider, model=model, metadata=metadata,
+    ) as client:
+        yield client
+
+
+@contextmanager
 def observation(
     *,
     name: str,

@@ -6,14 +6,14 @@ const QUESTIONS = [
   { n: 3, title: "RAG Q&A over the paper", desc: "Ask questions about the paper with citations.", path: "/q3", status: "Ready to test", cls: "ready", enabled: true },
   { n: 4, title: "Runaway Token Spend writeup", desc: "Definition, source, and a grounded cost example.", path: "/q4", status: "Ready to test", cls: "ready", enabled: true },
   { n: 5, title: "Langfuse Alert on Token/Cost", desc: "Project-scoped alert + proof it fires.", path: "/q5", status: "Ready to test", cls: "ready", enabled: true },
-  { n: 6, title: "Multi-paper RAG, access-scoped", desc: "Owner-filtered retrieval with per-paper citations.", path: "", status: "Coming soon", cls: "", enabled: false },
+  { n: 6, title: "Multi-paper RAG, access-scoped", desc: "Owner-filtered retrieval with per-paper citations.", path: "/q6", status: "Ready to test", cls: "ready", enabled: true },
 ];
 
 export default function Home() {
   return (
     <div>
       <div className="hero">
-        <h1>AI Fundamentals → AI Engineer</h1>
+        <h1>PaperPilot — AI Engineer Track</h1>
         <p>
           One repo, one running system, six questions. Each card routes to that
           question's page. Progress is approved one question at a time.

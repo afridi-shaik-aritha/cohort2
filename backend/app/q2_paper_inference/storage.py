@@ -56,16 +56,8 @@ def load_paper(paper_id: str) -> dict | None:
 
 def list_papers(owner_id: str | None = None) -> list[dict]:
     """Summary rows only — never the full text, so listings stay cheap."""
-    papers_dir = _dir()
-    if not papers_dir.exists():
-        return []
-    rows: list[dict] = []
-    for path in papers_dir.glob("p_*.json"):
-        try:
-            with open(path, encoding="utf-8") as fh:
-                rec = json.load(fh)
-        except Exception:
-            continue
+    rows = []
+    for rec in all_records():
         if owner_id and rec.get("owner_id") != owner_id:
             continue
         rows.append(
@@ -81,3 +73,24 @@ def list_papers(owner_id: str | None = None) -> list[dict]:
         )
     rows.sort(key=lambda r: r.get("created_at") or "", reverse=True)
     return rows
+
+
+def all_records() -> list[dict]:
+    """Full records, unordered — the raw store Q6's scope filter walks.
+
+    Q6 applies its owner filter to the result; nothing else should use this
+    without an equivalent filter.
+    """
+    papers_dir = _dir()
+    if not papers_dir.exists():
+        return []
+    out: list[dict] = []
+    for path in papers_dir.glob("p_*.json"):
+        try:
+            with open(path, encoding="utf-8") as fh:
+                rec = json.load(fh)
+        except Exception:
+            continue
+        if isinstance(rec, dict) and rec.get("paper_id"):
+            out.append(rec)
+    return out

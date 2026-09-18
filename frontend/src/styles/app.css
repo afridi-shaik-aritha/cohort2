@@ -315,6 +315,46 @@ a.card:hover { border-color: var(--color-border-strong); }
 }
 .q3-citation strong { font-weight: 600; }
 
+/* ── Q6: multi-paper RAG, access-scoped ─────────────────────────────── */
+.q6-ownerbar, .q6-scopebar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: 0 0 16px; padding: 10px 16px;
+  background: var(--color-bg-raised); border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+.q6-ownerbar-label {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+.q6-owner-chip, .q6-scope-chip {
+  background: var(--color-bg-subtle); border: 1px solid transparent;
+  border-radius: 999px; padding: 3px 12px; font-size: 0.8125rem;
+  color: var(--color-text-secondary); cursor: pointer;
+  max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: border-color 150ms ease-out, color 150ms ease-out;
+}
+.q6-owner-chip:hover:not(:disabled), .q6-scope-chip:hover:not(:disabled) {
+  border-color: var(--color-border-strong); color: var(--color-text-primary);
+}
+.q6-owner-chip.active, .q6-scope-chip.active {
+  background: var(--color-accent-subtle); color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+.q6-owner-chip:disabled, .q6-scope-chip:disabled { opacity: 0.5; cursor: not-allowed; }
+.q6-ownerbar .composer-model { margin-left: auto; }
+.q6-denial { border-left-color: var(--color-error); color: var(--color-text-primary); }
+/* Per-paper tint (Q6 only): hue comes from the paper_id hash via --paper-hue.
+   Q3's chips keep the plain accent tokens. */
+.q3-citation.q6-citation {
+  background: hsl(var(--paper-hue, 26) 45% 90%);
+  color: hsl(var(--paper-hue, 26) 55% 30%);
+}
+[data-theme="dark"] .q3-citation.q6-citation {
+  background: hsl(var(--paper-hue, 26) 30% 22%);
+  color: hsl(var(--paper-hue, 26) 45% 75%);
+}
+
 /* ── Q4: runaway-spend writeup page ───────────────────────────────────────── */
 .topbar-sub { margin-bottom: 8px; }
 .topbar-sub .brand {

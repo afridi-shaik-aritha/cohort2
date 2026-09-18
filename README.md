@@ -1,4 +1,4 @@
-# AI Fundamentals → AI Engineer — Assignment System
+# PaperPilot — AI Engineer Track (Assignment System)
 
 One repo, one running system, six questions. Each question gets its own backend
 module and its own frontend page, reachable from a shared home screen. Progress is
@@ -13,9 +13,9 @@ built and approved one question at a time — see `00-MASTER-PROMPT.md` for the 
 | 3 | RAG Extension — Q&A over the paper         | Ready to test |
 | 4 | "Runaway Token Spend" writeup              | Ready to test |
 | 5 | Langfuse Alert on Token/Cost                | Ready to test |
-| 6 | Multi-paper RAG with access-scoped citations| Not built   |
+| 6 | Multi-paper RAG with access-scoped citations| Ready to test |
 
-## Q1 — Streaming Chat UI (built, awaiting human sign-off)
+## Q1 — Streaming Chat UI (built)
 
 **What it is:** a chat page (`/q1`) streaming tokens over SSE as they're generated,
 with a visible indicator whenever a tool call creates a gap in the token stream,
@@ -240,6 +240,53 @@ dashboard alert is created by hand (exact click path in
 **Endpoints:** `GET /api/q5/config` (the tripwire definition),
 `GET /api/q5/papers/{id}/spend` (per-paper ledger evaluation).
 
+## Q6 — Multi-paper RAG with access-scoped citations (built)
+
+**What it is:** Q3's chat-over-documents, extended to many papers from many users sharing one
+index, at `/q6`. A user switcher (simulated users via the `X-Owner-Id` header), a paper scope
+selector ("All my papers" or specific ones), PDF upload into the signed-in user's library,
+and answers that attribute every claim to the paper it came from.
+
+**Access control is structural, not instructional.** The retrieval candidate pool is built
+exclusively from records where `owner_id == current_user` (`backend/app/q6_multi_paper_rag/scope.py::scoped_records`) —
+the metadata-filter equivalent of `WHERE owner_id = current_user` on the vector search. A
+foreign chunk is never embedded-against, never ranked, never shown to the model; there is no
+code path by which it could enter scoring. The system prompt deliberately contains **no**
+access-control language, because the model never sees foreign content — nothing to hide.
+
+**Cross-paper disambiguation** (fixed order, documented in `docs/specs/q6-spec.md` §2):
+explicit selector scope → title mention in the question (quoted phrase or ≥0.6 token overlap
+against the user's OWN titles) → all the user's papers, letting fused top-k decide. A question
+naming a paper outside the user's catalog refuses at the scope layer *before retrieval*, and an
+unowned title is indistinguishable from a nonexistent one (no existence leak).
+
+**Per-paper citations:** every context block is rendered to the model as `[n] (paper_title —
+section)`, every citation event carries `paper_id` + `paper_title`, and the done event groups
+`papers_cited`. The UI renders one chip per citation — `[n] PaperTitle — Section` — hue-tinted
+per paper so sources never visually blend.
+
+**Endpoints:** `GET/POST /api/q6/papers` (owner-scoped list / upload with owner stamped at
+ingestion), `POST /api/q6/ask` `{question, paper_ids?}` → SSE `run` → `citation*` → `token*` →
+`done{stop_reason, usage, refused, access_denied, citations, papers_cited}`,
+`DELETE /api/q6/runs/{run_id}/cancel`, `GET /api/q6/health`.
+
+**Verified (working system check, live `nvidia` / `openai/gpt-oss-20b` + local MiniLM):**
+two simulated users, one paper each, shared record store — alice: *Attention Is All You Need*,
+bob: *BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding*.
+1. alice, "How was the model evaluated?" → grounded answer (newstest2013 perplexity, BLEU,
+   beam search, checkpoint averaging) with 5 citations all labelled *Attention Is All You
+   Need*, `papers_cited: [{p_d332adfd, Attention Is All You Need, blocks: 5}]` — 2,590 tokens.
+2. alice names bob's paper by title ("What does 'BERT: …' say about masked language
+   modeling?") → exactly `run → token → done`, text `I don't have access to that paper.`,
+   `stop_reason: access_denied` — no embedding ran, no LLM call, and no event carries bob's
+   paper id or title. Fails safe, not leaky.
+3. bob asks his own paper → grounded MLM answer attributed to BERT.
+4. `GET /api/q6/papers` returns only the requester's library for each user.
+Automated as `backend/tests/test_q6_access.py` (9 tests): the structural assertion that alice's
+pool contains zero bob chunks, the scope-layer denial, the no-existence-leak check, selector
+scoping (a foreign selector id denies), and the end-to-end HTTP test that patches embed/LLM
+to *fail the test if called* during a denial. 87 backend tests pass; `tsc` + `vite build` clean.
+
 ## Repository layout
 
 ```
@@ -264,7 +311,11 @@ dashboard alert is created by hand (exact click path in
     /q5_alert                 # runaway token/cost tripwire (Q4 thresholds)  ← BUILT
       __init__.py             # threshold constants + per-paper ledger evaluation
       router.py               # GET /api/q5/config, GET /api/q5/papers/{id}/spend
-    /q6_multi_paper_rag        # multi-paper RAG, owner_id-scoped retrieval  (not built)
+    /q6_multi_paper_rag        # multi-paper RAG, owner_id-scoped retrieval  ← BUILT
+      scope.py                # THE access-control layer: owner-filtered candidate pool + disambiguation
+      retrieval.py            # cross-paper hybrid retrieval, per-paper attribution
+      analyzer.py             # grounded multi-paper answer streaming (no prompt-level access rules)
+      router.py               # /api/q6 endpoints; simulated users via X-Owner-Id
     /shared
       langfuse_client.py       # no-op-safe Langfuse Cloud tracing (used by Q2)
       llm_text.py              # plain-text streaming + usage capture + adaptive budget + local embeddings
@@ -275,7 +326,7 @@ dashboard alert is created by hand (exact click path in
   /scripts                    # Q5 alert tooling (run on demand / cron)
     q5_alert_monitor.py       # Metrics API v2 → threshold check → alert log + webhook
     q5_trigger_burst.py       # deliberate runaway trigger (burst of Q3 turns)
-  /tests                       # pytest: protocol, tools, Q1 stream, Q2 unit+API, Q3 unit+API, Q5 (78 tests)
+  /tests                       # pytest: protocol, tools, Q1 stream, Q2 unit+API, Q3 unit+API, Q5, Q6 access (87 tests)
   /data/papers/                # uploaded-paper JSON records (gitignored)
   requirements.txt
   .env / .env.example
@@ -289,7 +340,7 @@ dashboard alert is created by hand (exact click path in
       Q3RagQa.tsx              # paper picker + chat + citation chips + refusal state ← BUILT
       Q4Writeup.tsx            # renders the runaway-spend writeup (bundled md)  ← BUILT
       Q5Alert.tsx              # alert definition + per-paper ledger + proof doc ← BUILT
-      (Q6 page: added when built)
+      Q6MultiPaperRag.tsx      # user switcher + scope selector + per-paper citation chips ← BUILT
     /components
       Icon.tsx                 # inline SVG icon set (no emojis, no icon library)
     /styles
@@ -385,6 +436,13 @@ keys/models (model name formats differ per provider; examples included there).
 | GET | `/api/q2/papers/{id}` | full record incl. generated sections |
 | DELETE | `/api/q2/runs/{run_id}/cancel` | server-side cancel → `{"ok": bool}` |
 | GET | `/api/q2/health` | `{provider, model, tracing, langfuse_host}` |
+| GET | `/api/q5/config` | tripwire definition |
+| GET | `/api/q5/papers/{id}/spend` | per-paper ledger evaluation |
+| GET | `/api/q6/papers` | this owner's papers (X-Owner-Id scoping) |
+| POST | `/api/q6/papers` | multipart PDF → stored under the requesting owner |
+| POST | `/api/q6/ask` | `{question, paper_ids?}` → SSE: run → citation* → token* → done (access_denied on foreign titles) |
+| DELETE | `/api/q6/runs/{run_id}/cancel` | server-side cancel → `{"ok": bool}` |
+| GET | `/api/q6/health` | `{provider, model, embedding_*, tracing, langfuse_host}` |
 | GET | `/api/health` | `{"ok": true}` |
 
 ### Git workflow

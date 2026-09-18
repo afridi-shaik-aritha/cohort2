@@ -118,7 +118,7 @@ def _hash_vector(text: str) -> list[float]:
     vec = [0.0] * MOCK_EMBED_DIM
     norm = re.sub(r"\s+", " ", text.lower())
     for i in range(max(0, len(norm) - 2)):
-        h = int.from_bytes(hashlib.md5(norm[i : i + 3]).digest()[:4], "big")
+        h = int.from_bytes(hashlib.md5(norm[i : i + 3].encode()).digest()[:4], "big")
         vec[h % MOCK_EMBED_DIM] += 1.0
     n = math.sqrt(sum(v * v for v in vec)) or 1.0
     return [v / n for v in vec]

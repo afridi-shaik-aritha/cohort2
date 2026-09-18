@@ -6,6 +6,7 @@ import Q2PaperInference from "./pages/Q2PaperInference";
 import Q3RagQa from "./pages/Q3RagQa";
 import Q4Writeup from "./pages/Q4Writeup";
 import Q5Alert from "./pages/Q5Alert";
+import Q6MultiPaperRag from "./pages/Q6MultiPaperRag";
 
 export default function App() {
   const loc = useLocation();
@@ -13,7 +14,7 @@ export default function App() {
   return (
     <div className={isChat ? "shell shell-chat" : "shell"}>
       <div className="topbar">
-        <Link className="brand" to="/"><SparkIcon size={18} /> AI Fundamentals → AI Engineer</Link>
+        <Link className="brand" to="/"><SparkIcon size={18} /> PaperPilot — AI Engineer Track</Link>
         <nav>
           <Link to="/">Home</Link>
           <Link to="/q1">Q1</Link>
@@ -21,6 +22,7 @@ export default function App() {
           <Link to="/q3">Q3</Link>
           <Link to="/q4">Q4</Link>
           <Link to="/q5">Q5</Link>
+          <Link to="/q6">Q6</Link>
         </nav>
       </div>
       <Routes>
@@ -30,6 +32,7 @@ export default function App() {
         <Route path="/q3" element={<Q3RagQa />} />
         <Route path="/q4" element={<Q4Writeup />} />
         <Route path="/q5" element={<Q5Alert />} />
+        <Route path="/q6" element={<Q6MultiPaperRag />} />
       </Routes>
     </div>
   );

@@ -97,7 +97,7 @@ async function errorFromResponse(res: Response): Promise<HttpError> {
 }
 
 /** Parse one SSE HTTP response, invoking onEvent per JSON data frame. */
-async function parseFrames(res: Response, onEvent: (e: Q2Event) => void): Promise<void> {
+async function parseFrames<T>(res: Response, onEvent: (e: T) => void): Promise<void> {
   if (!res.ok || !res.body) throw await errorFromResponse(res);
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -115,7 +115,7 @@ async function parseFrames(res: Response, onEvent: (e: Q2Event) => void): Promis
         if (!t || t.startsWith(":")) continue;
         if (t.startsWith("data:")) {
           try {
-            onEvent(JSON.parse(t.slice(5).trim()) as Q2Event);
+            onEvent(JSON.parse(t.slice(5).trim()) as T);
           } catch {
             /* ignore malformed frame */
           }
@@ -324,4 +324,100 @@ export async function fetchPaperSpend(
   const res = await fetch(`/api/q5/papers/${paperId}/spend`);
   if (!res.ok) throw await errorFromResponse(res);
   return (await res.json()) as { config: Q5AlertConfig; evaluation: Q5Evaluation };
+}
+
+/** ── Q6 additions: multi-paper RAG with owner-scoped access control ────── */
+
+export interface Q6PaperSummary {
+  paper_id: string;
+  title: string;
+  authors: string[];
+  pages: number;
+  chars: number;
+  created_at: string;
+  has_sections: boolean;
+}
+
+export interface Q6Citation extends Citation {
+  paper_id: string;
+  paper_title: string;
+}
+
+export interface Q6PaperCited {
+  paper_id: string;
+  title: string;
+  blocks: number;
+}
+
+export type Q6Event =
+  | { type: "run"; data: { run_id: string } }
+  | { type: "citation"; data: Q6Citation }
+  | { type: "token"; data: { text: string } }
+  | { type: "error"; data: { message: string; recoverable: boolean } }
+  | {
+      type: "done";
+      data: {
+        stop_reason: string;
+        usage: TurnUsage | null;
+        refused?: boolean;
+        access_denied?: boolean;
+        citations?: Q6Citation[];
+        papers_cited?: Q6PaperCited[];
+      };
+    };
+
+export type Q6Health = Q3Health;
+
+function ownerHeaders(owner: string): Record<string, string> {
+  return owner ? { "X-Owner-Id": owner } : {};
+}
+
+export async function fetchQ6Health(): Promise<Q6Health> {
+  const res = await fetch("/api/q6/health");
+  if (!res.ok) throw await errorFromResponse(res);
+  return (await res.json()) as Q6Health;
+}
+
+export async function listQ6Papers(owner: string): Promise<Q6PaperSummary[]> {
+  const res = await fetch("/api/q6/papers", { headers: ownerHeaders(owner) });
+  if (!res.ok) throw await errorFromResponse(res);
+  const body = (await res.json()) as { papers: Q6PaperSummary[] };
+  return body.papers ?? [];
+}
+
+export async function uploadQ6Paper(file: File, owner: string): Promise<PaperMeta> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch("/api/q6/papers", {
+    method: "POST",
+    body: form,
+    headers: ownerHeaders(owner),
+  });
+  if (!res.ok) throw await errorFromResponse(res);
+  return (await res.json()) as PaperMeta;
+}
+
+export async function cancelQ6Run(runId: string): Promise<void> {
+  try {
+    await fetch(`/api/q6/runs/${runId}/cancel`, { method: "DELETE" });
+  } catch {
+    /* UI abort is enough */
+  }
+}
+
+export async function askQ6(
+  question: string,
+  paperIds: string[] | null,
+  owner: string,
+  onEvent: (e: Q6Event) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const res = await fetch("/api/q6/ask", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...ownerHeaders(owner) },
+    body: JSON.stringify({ question, paper_ids: paperIds }),
+    signal,
+  });
+  if (!res.ok || !res.body) throw await errorFromResponse(res);
+  await parseFrames<Q6Event>(res, onEvent);
 }

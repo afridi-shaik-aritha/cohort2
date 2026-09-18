@@ -42,13 +42,13 @@ def done_event(stop_reason: str, usage: Optional[dict], **extras) -> dict:
     return {"type": "done", "data": data}
 
 
-def citation_event(position: int, label: str, snippet: str) -> dict:
+def citation_event(position: int, label: str, snippet: str, **extras) -> dict:
     """Q3: a source the answer is grounded in, emitted before tokens so the UI
-    can render citation chips while the answer streams."""
-    return {
-        "type": "citation",
-        "data": {"position": position, "label": label, "snippet": snippet},
-    }
+    can render citation chips while the answer streams. Q6 passes paper_id/
+    paper_title via **extras for per-paper attribution (q6-spec §3)."""
+    data = {"position": position, "label": label, "snippet": snippet}
+    data.update(extras)
+    return {"type": "citation", "data": data}
 
 
 def section_start(key: str, label: str, index: int, total: int) -> dict:
