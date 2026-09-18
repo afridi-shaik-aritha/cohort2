@@ -281,3 +281,47 @@ export async function cancelQ3Run(runId: string): Promise<void> {
     /* UI abort is enough */
   }
 }
+
+/** ── Q5 additions: runaway-spend alert config + per-paper ledger ─────────── */
+
+export interface Q5AlertConfig {
+  alert_type: string;
+  metric: string;
+  companion_metric: string;
+  window: string;
+  threshold_usd: number;
+  threshold_tokens: number;
+  single_turn_tokens: number;
+  channel: string;
+  pricing_basis: { price_in_per_token: number; price_out_per_token: number };
+}
+
+export interface Q5Evaluation {
+  paper_id: string;
+  turns: number;
+  window: number;
+  total_tokens: number;
+  total_usd: number;
+  max_turn_tokens: number;
+  thresholds: {
+    healthy_turn_max_tokens: number;
+    runaway_session_tokens: number;
+    runaway_session_usd: number;
+  };
+  trips: { tokens: boolean; cost: boolean };
+  alert: boolean;
+}
+
+export async function fetchQ5Config(): Promise<Q5AlertConfig> {
+  const res = await fetch("/api/q5/config");
+  if (!res.ok) throw await errorFromResponse(res);
+  return (await res.json()) as Q5AlertConfig;
+}
+
+export async function fetchPaperSpend(
+  paperId: string,
+): Promise<{ config: Q5AlertConfig; evaluation: Q5Evaluation }> {
+  const res = await fetch(`/api/q5/papers/${paperId}/spend`);
+  if (!res.ok) throw await errorFromResponse(res);
+  return (await res.json()) as { config: Q5AlertConfig; evaluation: Q5Evaluation };
+}

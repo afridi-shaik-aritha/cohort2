@@ -12,7 +12,7 @@ built and approved one question at a time — see `00-MASTER-PROMPT.md` for the 
 | 2 | Paper Inference Engine (+ Langfuse)        | Ready to test |
 | 3 | RAG Extension — Q&A over the paper         | Ready to test |
 | 4 | "Runaway Token Spend" writeup              | Ready to test |
-| 5 | Langfuse Alert on Token/Cost                | Not built   |
+| 5 | Langfuse Alert on Token/Cost                | Ready to test |
 | 6 | Multi-paper RAG with access-scoped citations| Not built   |
 
 ## Q1 — Streaming Chat UI (built, awaiting human sign-off)
@@ -199,6 +199,47 @@ bad session ≈$0.016 (~10×); at 1,000 papers/day with 1% runaway ≈$0.15/day
 extra on this cheap model, ≈$20/day on a frontier model. The writeup ends with
 the Q5 link: the alert threshold derives from the $0.0015 baseline.
 
+## Q5 — Langfuse Alert on Token/Cost (built)
+
+**What it is:** the tripwire Q4 argues for, applied to Q3's real traffic — at
+`/q5`, a status/proof page showing the alert definition, a live per-paper spend
+ledger, and the firing evidence.
+
+**What was configured:** a **project-scoped metric alert** (Observability →
+Alerts) — explicitly **not** the account-level Billing Spend Alert, which
+monitors what is owed to Langfuse for the platform. Scoped to Q3 by the filter
+`name = answer` (one such observation per Q3 turn), on **`totalCost` sum and
+`totalTokens` sum** over a **rolling 1 hour**, thresholds **$0.008 or 100,000
+tokens**, notified via a **Webhook** automation.
+
+**Threshold derivation (measured):** the busiest paper in this repo (1 Q2
+analyze + 10 Q3 turns, `p_9c3022cf`) costs **24,499 tokens / $0.001124**; the
+priciest *legitimate* turn is the references answer at 5,438 tokens; Q4's
+runaway session is ~260,000 tokens / ~$0.016. The threshold is 4× the healthy
+paper-day and ~38% of the runaway session — so it fires while a loop is still
+running. Arithmetic in `docs/specs/q5-spec.md` §2.
+
+**Cost tracking was broken before this question and is fixed:** all 23 existing
+Q3 `answer` generations had `usageDetails` but **no cost** — NVIDIA NIM's
+`openai/gpt-oss-20b` matches no Langfuse price definition. Q5 added a custom
+model definition (OpenRouter's $0.02/$0.10 per 1M from Q4) and verified
+`costDetails {input: 4.7e-06, output: 8.2e-06, total: 1.29e-05}` on a new
+generation. This is why the alert has a token leg as well as a cost leg.
+
+**Proof it fires:** `backend/scripts/q5_trigger_burst.py` replays Q4's failure
+shape against the live pipeline — 20 consecutive references answers on one paper
+in one window (~120k tokens in ~18 min, versus the 100k threshold).
+`backend/scripts/q5_alert_monitor.py` applies the alert's own metric, window and
+threshold through the **Metrics API v2** and logs each evaluation to
+`docs/evidence/q5-alert-monitor.jsonl`; the baseline run reads OK (18k tokens,
+18% of threshold — the false-positive check) and the post-burst run reads
+**ALERT**. Because Langfuse Cloud exposes no API for Alerts/Monitors, the
+dashboard alert is created by hand (exact click path in
+`docs/q5-alert-proof-template.md`) and the monitor is its auditable mirror.
+
+**Endpoints:** `GET /api/q5/config` (the tripwire definition),
+`GET /api/q5/papers/{id}/spend` (per-paper ledger evaluation).
+
 ## Repository layout
 
 ```
@@ -220,6 +261,9 @@ the Q5 link: the alert threshold derives from the $0.0015 baseline.
       retrieval.py            # router: metadata | references | semantic (+hybrid RRF)
       analyzer.py             # grounded answer streaming, NOT_IN_PAPER gate, tracing
       router.py               # index / ask (SSE) / status / cancel / health
+    /q5_alert                 # runaway token/cost tripwire (Q4 thresholds)  ← BUILT
+      __init__.py             # threshold constants + per-paper ledger evaluation
+      router.py               # GET /api/q5/config, GET /api/q5/papers/{id}/spend
     /q6_multi_paper_rag        # multi-paper RAG, owner_id-scoped retrieval  (not built)
     /shared
       langfuse_client.py       # no-op-safe Langfuse Cloud tracing (used by Q2)
@@ -228,7 +272,10 @@ the Q5 link: the alert threshold derives from the $0.0015 baseline.
       protocol.py              # SSE event constructors (shapes above)
       cancel_registry.py       # run_id → asyncio.Event, TTL 5 min
     main.py                    # mounts routers + serves frontend/dist (single process)
-  /tests                       # pytest: protocol, tools, Q1 stream, Q2 unit+API, Q3 unit+API (68 tests)
+  /scripts                    # Q5 alert tooling (run on demand / cron)
+    q5_alert_monitor.py       # Metrics API v2 → threshold check → alert log + webhook
+    q5_trigger_burst.py       # deliberate runaway trigger (burst of Q3 turns)
+  /tests                       # pytest: protocol, tools, Q1 stream, Q2 unit+API, Q3 unit+API, Q5 (78 tests)
   /data/papers/                # uploaded-paper JSON records (gitignored)
   requirements.txt
   .env / .env.example
@@ -240,7 +287,9 @@ the Q5 link: the alert threshold derives from the $0.0015 baseline.
       Q1Streaming.tsx          # Claude-style chat: streaming, tool rows, stop/retry  ← BUILT
       Q2PaperInference.tsx     # dropzone + 2×2 panel grid + per-section chips  ← BUILT
       Q3RagQa.tsx              # paper picker + chat + citation chips + refusal state ← BUILT
-      (Q4–Q6 pages: added when built)
+      Q4Writeup.tsx            # renders the runaway-spend writeup (bundled md)  ← BUILT
+      Q5Alert.tsx              # alert definition + per-paper ledger + proof doc ← BUILT
+      (Q6 page: added when built)
     /components
       Icon.tsx                 # inline SVG icon set (no emojis, no icon library)
     /styles

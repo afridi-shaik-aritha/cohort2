@@ -5,6 +5,7 @@ import Q1Streaming from "./pages/Q1Streaming";
 import Q2PaperInference from "./pages/Q2PaperInference";
 import Q3RagQa from "./pages/Q3RagQa";
 import Q4Writeup from "./pages/Q4Writeup";
+import Q5Alert from "./pages/Q5Alert";
 
 export default function App() {
   const loc = useLocation();
@@ -19,6 +20,7 @@ export default function App() {
           <Link to="/q2">Q2</Link>
           <Link to="/q3">Q3</Link>
           <Link to="/q4">Q4</Link>
+          <Link to="/q5">Q5</Link>
         </nav>
       </div>
       <Routes>
@@ -27,6 +29,7 @@ export default function App() {
         <Route path="/q2" element={<Q2PaperInference />} />
         <Route path="/q3" element={<Q3RagQa />} />
         <Route path="/q4" element={<Q4Writeup />} />
+        <Route path="/q5" element={<Q5Alert />} />
       </Routes>
     </div>
   );

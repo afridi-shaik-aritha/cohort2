@@ -5,7 +5,7 @@ const QUESTIONS = [
   { n: 2, title: "Paper Inference Engine", desc: "Upload a paper, get 4 structured sections + Langfuse traces.", path: "/q2", status: "Ready to test", cls: "ready", enabled: true },
   { n: 3, title: "RAG Q&A over the paper", desc: "Ask questions about the paper with citations.", path: "/q3", status: "Ready to test", cls: "ready", enabled: true },
   { n: 4, title: "Runaway Token Spend writeup", desc: "Definition, source, and a grounded cost example.", path: "/q4", status: "Ready to test", cls: "ready", enabled: true },
-  { n: 5, title: "Langfuse Alert on Token/Cost", desc: "Project-scoped alert + proof it fires.", path: "", status: "Coming soon", cls: "", enabled: false },
+  { n: 5, title: "Langfuse Alert on Token/Cost", desc: "Project-scoped alert + proof it fires.", path: "/q5", status: "Ready to test", cls: "ready", enabled: true },
   { n: 6, title: "Multi-paper RAG, access-scoped", desc: "Owner-filtered retrieval with per-paper citations.", path: "", status: "Coming soon", cls: "", enabled: false },
 ];
 

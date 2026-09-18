@@ -37,14 +37,10 @@ growth, or a chain of tool calls that keeps expanding rather than terminating �
 rather than growing proportionally and predictably with usage.
 
 ### 3. Example grounded in this actual system (Q2/Q3), not a hypothetical
-<!-- AGENT: pick a real candidate failure mode from what was actually built, e.g.:
-a RAG query stuck reformulating repeatedly, or a long paper re-summarized on every
-follow-up instead of reusing prior context. Walk through: what would trigger it in
-the built Q2/Q3 system, what it would look like in the Langfuse trace (many
-generations, escalating token counts, or a repeated identical generation), and the
-cost impact at a stated scale (e.g. "if this happened on 1% of 1,000 papers/day,
-that's an extra $X/day") — use real/estimated per-call costs from this system's
-actual Langfuse traces, not made-up numbers. -->
+
+Filled in `docs/q4-writeup-template.md` §Example: the Q3 follow-up loop
+(re-send full context + uncapped retries), with trigger, trace shape, and
+cost arithmetic from live traces and public pricing.
 
 ### 4. Connect forward to Q5
 This definition is the reason a Langfuse alert (Q5) is being set up — state the link
