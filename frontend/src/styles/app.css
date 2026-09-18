@@ -314,3 +314,12 @@ a.card:hover { border-color: var(--color-border-strong); }
   text-overflow: ellipsis; white-space: nowrap;
 }
 .q3-citation strong { font-weight: 600; }
+
+/* ── Q4: runaway-spend writeup page ───────────────────────────────────────── */
+.topbar-sub { margin-bottom: 8px; }
+.topbar-sub .brand {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 0.875rem; text-decoration: none; color: var(--color-text-secondary);
+}
+.q4-lede { color: var(--color-text-secondary); max-width: 70ch; }
+.q4-lede code, .md code { font-size: 0.875em; }

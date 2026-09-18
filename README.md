@@ -10,8 +10,8 @@ built and approved one question at a time — see `00-MASTER-PROMPT.md` for the 
 |---|---------------------------------------------|-------------|
 | 1 | Streaming Chat UI                          | Done (approved) |
 | 2 | Paper Inference Engine (+ Langfuse)        | Ready to test |
-| 3 | RAG Extension — Q&A over the paper         | Not built   |
-| 4 | "Runaway Token Spend" writeup              | Not built   |
+| 3 | RAG Extension — Q&A over the paper         | Ready to test |
+| 4 | "Runaway Token Spend" writeup              | Ready to test |
 | 5 | Langfuse Alert on Token/Cost                | Not built   |
 | 6 | Multi-paper RAG with access-scoped citations| Not built   |
 
@@ -174,6 +174,30 @@ MiniLM, on `p_9c3022cf` — 35 chunks, 23 sections, 9,283-char references block)
 Langfuse Cloud (jp) shows one `q3.paper_qa` trace per turn: root span →
 nested `retrieve` span + `answer` GENERATION with model + usage. 68 backend
 tests pass (9 Q1 + 19 Q2 + 40 Q3); `tsc` + `vite build` clean.
+
+## Q4 — "Runaway Token Spend" writeup (built)
+
+**What it is:** the written deliverable at `/q4` (rendered from
+`docs/q4-writeup-template.md`, Home card → "Ready to test"). Defines runaway
+token spend in our own words — token consumption growing unexpectedly and
+uncontrollably instead of scaling with usage — and cites two real sources: the
+primary source is MachineLearningMastery.com's "Identifying Token Costs Hiding
+in Your Agentic Loop" (Chugani, 2026-08-07), which argues costs compound
+because every step re-sends ever-growing context; corroborated by PromptRails'
+"Runaway AI costs are an architecture problem" (2026-07-08), which frames the
+fix as safety architecture (per-request limits, budgets, anomaly detection, a
+tested kill switch).
+
+**Grounded example:** a Q3 follow-up loop that re-sends full context and
+retries long answers without a cap (three compounding habits already visible in
+this codebase: per-call full-context re-send, retry chains that append prior
+output, map-reduce digest amplification). Healthy trace shape is one
+`q3.paper_qa` trace per turn with ~1–3k input tokens; runaway shape is dozens
+of `answer` generations with climbing inputs. Costed from real Q3 traces and
+public `gpt-oss-20b` pricing ($0.02/$0.10 per 1M): healthy paper-day ≈$0.0015,
+bad session ≈$0.016 (~10×); at 1,000 papers/day with 1% runaway ≈$0.15/day
+extra on this cheap model, ≈$20/day on a frontier model. The writeup ends with
+the Q5 link: the alert threshold derives from the $0.0015 baseline.
 
 ## Repository layout
 

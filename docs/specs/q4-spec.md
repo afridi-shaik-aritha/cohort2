@@ -1,6 +1,6 @@
 # Q4 Spec — Explain "Runaway Token Spend" with a Cited Example
 
-Status: DRAFT
+Status: BUILT (writeup complete 2026-09-18 — see `/docs/q4-writeup-template.md`)
 
 Note: Q4 is a written deliverable, not a UI feature. The output is
 `/docs/q4-writeup-template.md` filled in, plus a small Home card ("Not built" →
@@ -21,6 +21,14 @@ research/practitioner write-up). Cite properly: link, title, one-line note on wh
 says, in your own words — no pasted quotes.
 
 <!-- AGENT: record the source(s) found here before writing the final doc. -->
+Primary: MachineLearningMastery.com, "Identifying Token Costs Hiding in Your
+Agentic Loop" (Chugani, 2026-08-07) — chosen because it names concrete,
+checkable compounding mechanisms (context accumulation, failure retention,
+payload bloat, model oversizing, prompt duplication) rather than generic cost
+advice. Corroborating: PromptRails, "Runaway AI costs are an architecture
+problem" (2026-07-08) — chosen for the fuse-box framing (limits, budgets,
+anomaly detection, kill switch) that maps directly onto this system's existing
+defenses and Q5's alert.
 
 ### 2. Definition (in your own words)
 Runaway token spend: an LLM system's token consumption (and therefore cost) grows
@@ -48,4 +56,10 @@ the system built this week, with rough real numbers — not a generic "imagine a
 chatbot" scenario.
 
 ## Decisions log
-<!-- AGENT: record which source(s) were chosen and why. -->
+Chosen example: the Q3 follow-up loop (re-send full context + uncapped retries
+on long answers), because it is the closest real failure mode to code already
+in this repo (context budgets, references answer-cap history) rather than an
+invented scenario. Baseline numbers come from Q3's live traces; pricing from
+OpenRouter's gpt-oss-20b page ($0.02/$0.10 per 1M), cross-checked on
+llm-cost.io. Q4 intentionally ships as docs-only (Home card links to the
+writeup page) — no backend/frontend feature work, per the master prompt.

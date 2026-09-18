@@ -124,24 +124,6 @@ def _hash_vector(text: str) -> list[float]:
     return [v / n for v in vec]
 
 
-def _hash_vector(text: str) -> list[float]:
-    """Deterministic bag-of-trigram vector — mock stand-in for real embeddings.
-
-    Identical text → identical vector; overlapping wording → overlapping support,
-    so retrieval tests can assert real cosine behaviour without network.
-    """
-    import hashlib
-    import math
-
-    vec = [0.0] * MOCK_EMBED_DIM
-    norm = re.sub(r"\s+", " ", text.lower())
-    for i in range(max(0, len(norm) - 2)):
-        h = int.from_bytes(hashlib.md5(norm[i : i + 3]).digest()[:4], "big")
-        vec[h % MOCK_EMBED_DIM] += 1.0
-    n = math.sqrt(sum(v * v for v in vec)) or 1.0
-    return [v / n for v in vec]
-
-
 async def input_char_budget() -> int:
     """Per-call paper budget in chars, adaptive to the loaded model's context.
 

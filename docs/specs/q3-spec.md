@@ -41,15 +41,21 @@ Q3 routes each question through an explicit **router** before retrieval. Routing
 deliberately simple and inspectable (regex/keyword scoring on the question, later
 upgradable to an LLM classifier — recorded in Decisions log).
 
-- **"How was this tested?" (semantic/conceptual) → dense vector retrieval.**
-  Chunks are embedded at analysis time with `nvidia/llama-nemotron-embed-vl-1b-v2`
-  (2048-dim, `input_type: passage`) — verified live against the user's NVIDIA key
-  (0.29 cosine for the matching eval passage vs ~0.03 for unrelated ones; ~0.7s for
-  20 passages). At question time the question is embedded as `input_type: query` and
-  top-k (k=4) chunks are retrieved by cosine similarity. Vectors are stored in the
-  paper JSON record (`index.vectors`) — filesystem persistence like Q2, no vector DB
+- **"How was this tested?" (semantic/conceptual) → hybrid retrieval over
+  section-aware chunks.** Chunks are embedded at index time with local
+  `sentence-transformers/all-MiniLM-L6-v2` (384-dim, symmetric; `input_type`
+  accepted but ignored) — no network, no per-call cost. At question time the
+  question is embedded the same way and fused with BM25-style keyword scoring
+  via reciprocal rank fusion (dense-only missed the evaluation section live —
+  "tested" shares no wording with "BLEU/newstest2014"); top-k (k=4) chunks are
+  retrieved by fused rank. Vectors are stored in the paper JSON record
+  (`index.chunks[].vector`) — filesystem persistence like Q2, no vector DB
   (simplest thing that works for one paper; Q6 swaps in owner-scoped multi-paper
-  retrieval on the same shape).
+  retrieval on the same shape). Provenance: the original plan used hosted
+  `nvidia/llama-nemotron-embed-vl-1b-v2` (2048-dim, `input_type: passage/query`,
+  verified live: 0.29 cosine for the matching eval passage vs ~0.03 for
+  unrelated ones; ~0.7s for 20 passages); superseded mid-build by user decision
+  for local MiniLM (see Decisions log; floor recalibrated 0.18 → 0.10).
 
 - **"What are the references?" (structural, not semantic) → dedicated References
   block, captured at ingestion.** Decision: **extract the References section as a
@@ -115,9 +121,9 @@ Refusal short-circuit (retrieval gate) still emits the trace with
 
 - `POST /api/q3/papers/{paper_id}/index` → builds/refreshes the Q3 index
   (segments, chunks, references block, embeddings). Idempotent; returns
-  `{chunks, references_chars, has_references, embedding_model}`. Called
-  automatically after Q2's analyze completes, and on demand before the first
-  question if the index is missing.
+  `{chunks, references_chars, has_references, embedding_model}`. Built
+  automatically by Q3 on upload and on demand before the first question if the
+  index is missing; Q2's analyze endpoint does not build it directly.
 - `POST /api/q3/papers/{paper_id}/ask` → `{question}` → SSE stream reusing the Q1/Q2
   event vocabulary: `run` → `citation`* (before tokens, so the UI can render source
   chips early) → `token`* → `done{stop_reason, usage, refused, citations}`.
